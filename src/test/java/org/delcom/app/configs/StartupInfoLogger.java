@@ -1,45 +1,69 @@
 package org.delcom.app.configs;
 
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.ApplicationListener;
-import org.springframework.core.env.Environment;
-import org.springframework.stereotype.Component;
+import org.springframework.core.env.ConfigurableEnvironment;
+import org.springframework.context.ConfigurableApplicationContext;
 
-@Component
-public class StartupInfoLogger implements ApplicationListener<ApplicationReadyEvent> {
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 
-    @Override
-    public void onApplicationEvent(ApplicationReadyEvent event) {
-        Environment env = event.getApplicationContext().getEnvironment();
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.*;
 
-        String port = env.getProperty("server.port", "8080");
-        String contextPath = env.getProperty("server.servlet.context-path", "/");
-        if (contextPath == null) {
-            contextPath = "";
-        } else if (contextPath.equals("/")) {
-            contextPath = "";
-        }
+class StartupInfoLoggerTests {
 
-        // Deteksi LiveReload dari DevTools
-        boolean liveReloadEnabled = env.getProperty("spring.devtools.livereload.enabled", Boolean.class, false);
-        String liveReloadPort = env.getProperty("spring.devtools.livereload.port", "35729");
+    private StartupInfoLogger logger;
 
-        // Ambil host (default localhost)
-        String host = env.getProperty("server.address", "localhost");
+    private ConfigurableEnvironment environment;
+    private ConfigurableApplicationContext context;
+    private ApplicationReadyEvent event;
 
-        // Warna ANSI untuk konsol
-        String GREEN = "\u001B[32m";
-        String CYAN = "\u001B[36m";
-        String YELLOW = "\u001B[33m";
-        String RESET = "\u001B[0m";
+    private final ByteArrayOutputStream outContent = new ByteArrayOutputStream();
 
-        System.out.println();
-        System.out.println(GREEN + "Application started successfully!" + RESET);
-        System.out.println(CYAN + "> URL: http://" + host + ":" + port + contextPath + RESET);
-        System.out.println(
-                liveReloadEnabled
-                        ? (YELLOW + "> LiveReload: ENABLED (port " + liveReloadPort + ")" + RESET)
-                        : (YELLOW + "> LiveReload: DISABLED" + RESET));
-        System.out.println();
+    @BeforeEach
+    void setup() {
+        // Redirect System.out
+        System.setOut(new PrintStream(outContent));
+
+        logger = new StartupInfoLogger();
+
+        environment = mock(ConfigurableEnvironment.class);
+        context = mock(ConfigurableApplicationContext.class);
+        event = mock(ApplicationReadyEvent.class);
+
+        when(event.getApplicationContext()).thenReturn(context);
+        when(context.getEnvironment()).thenReturn(environment);
+
+        // default property mock
+        when(environment.getProperty("server.port", "8080")).thenReturn("8080");
+        when(environment.getProperty("spring.devtools.livereload.enabled", Boolean.class, false)).thenReturn(true);
+        when(environment.getProperty("spring.devtools.livereload.port", "35729")).thenReturn("35729");
+        when(environment.getProperty("server.address", "localhost")).thenReturn("localhost");
+    }
+
+    @Test
+    void testOnApplicationEvent_printsExpectedOutput() {
+        when(environment.getProperty("server.servlet.context-path", "")).thenReturn("/app/home");
+        logger.onApplicationEvent(event);
+
+        String output = outContent.toString();
+
+        assertTrue(output.contains("Application started successfully!"));
+        assertTrue(output.contains("> URL: http://localhost:8080"));
+        assertTrue(output.contains("> LiveReload: ENABLED (port 35729)"));
+    }
+
+    @Test
+    void testLiveReloadDisabled() {
+        when(environment.getProperty("server.servlet.context-path", "/")).thenReturn("");
+        when(environment.getProperty("spring.devtools.livereload.enabled", Boolean.class, false)).thenReturn(false);
+
+        logger.onApplicationEvent(event);
+
+        String output = outContent.toString();
+
+        assertTrue(output.contains("> LiveReload: DISABLED"));
     }
 }
